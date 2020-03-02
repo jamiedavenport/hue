@@ -118,8 +118,6 @@ class SqlAlchemyApi(Api):
     self.db = None
     if self.cache_key in API_CACHE:
       self.db = API_CACHE[self.cache_key]
-    # else:
-    #   self.db = API_CACHE[self.cache_key] = self._create_engine()
 
   @property
   def cache_key(self):
@@ -143,7 +141,6 @@ class SqlAlchemyApi(Api):
 
       raw_url = Template(self.options['url'])
       url = raw_url.safe_substitute(**vars)
-      print(url)
     else:
       url = self.options['url']
 
