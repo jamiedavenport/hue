@@ -78,6 +78,8 @@ else:
 CONNECTION_CACHE = {}
 LOG = logging.getLogger(__name__)
 
+# Cache one JDBC connection by user for not saving user credentials
+API_CACHE = {}
 
 def query_error_handler(func):
   def decorator(*args, **kwargs):
@@ -104,9 +106,24 @@ def query_error_handler(func):
 class SqlAlchemyApi(Api):
 
   def __init__(self, user, interpreter):
+    Api.__init__(self, user, interpreter=interpreter)
+
+    global API_CACHE
+
     self.user = user
     self.options = interpreter['options']
     self.backticks = '"' if re.match('^(postgresql://|awsathena|elasticsearch)', self.options.get('url', '')) else '`'
+
+    # Setup Database
+    self.db = None
+    if self.cache_key in API_CACHE:
+      self.db = API_CACHE[self.cache_key]
+    # else:
+    #   self.db = API_CACHE[self.cache_key] = self._create_engine()
+
+  @property
+  def cache_key(self):
+    return '%s-%s' % (self.interpreter['name'], self.user.username)
 
   def _create_engine(self):
     if '${' in self.options['url']: # URL parameters substitution
@@ -126,6 +143,7 @@ class SqlAlchemyApi(Api):
 
       raw_url = Template(self.options['url'])
       url = raw_url.safe_substitute(**vars)
+      print(url)
     else:
       url = self.options['url']
 
@@ -141,6 +159,20 @@ class SqlAlchemyApi(Api):
 
     return create_engine(url, **options)
 
+  def create_session(self, lang=None, properties=None):
+    global API_CACHE
+    props = super(SqlAlchemyApi, self).create_session(lang, properties)
+
+    props['properties'] = {} # We don't store passwords
+
+    if self.db is None:
+      self.options['session'] = {
+        'properties': properties
+      }
+      self.db = API_CACHE[self.cache_key] = self._create_engine()
+
+    return props
+
   def _get_session(self, notebook, snippet):
     for session in notebook['sessions']:
       if session['type'] == snippet['type']:
@@ -152,10 +184,7 @@ class SqlAlchemyApi(Api):
   def execute(self, notebook, snippet):
     guid = uuid.uuid4().hex
 
-    session = self._get_session(notebook, snippet)
-    if not session is None:
-      self.options['session'] = session
-    engine = self._create_engine()
+    engine = self.db
     connection = engine.connect()
 
     result = connection.execution_options(stream_results=True).execute(snippet['statement'])
@@ -272,7 +301,7 @@ class SqlAlchemyApi(Api):
 
   @query_error_handler
   def autocomplete(self, snippet, database=None, table=None, column=None, nested=None):
-    engine = self._create_engine()
+    engine = self.db
     inspector = inspect(engine)
 
     assist = Assist(inspector, engine, backticks=self.backticks)
@@ -311,7 +340,7 @@ class SqlAlchemyApi(Api):
 
   @query_error_handler
   def get_sample_data(self, snippet, database=None, table=None, column=None, is_async=False, operation=None):
-    engine = self._create_engine()
+    engine = self.db
     inspector = inspect(engine)
 
     assist = Assist(inspector, engine, backticks=self.backticks)
