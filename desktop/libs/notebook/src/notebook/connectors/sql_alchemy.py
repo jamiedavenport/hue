@@ -169,6 +169,10 @@ class SqlAlchemyApi(Api):
       self.db = API_CACHE[self.cache_key] = self._create_engine()
 
     return props
+  
+  def close_session(self, session):
+    global API_CACHE
+    del API_CACHE[self.cache_key]
 
   def _get_session(self, notebook, snippet):
     for session in notebook['sessions']:
