@@ -186,6 +186,8 @@ class SqlAlchemyApi(Api):
     guid = uuid.uuid4().hex
 
     engine = self.db
+    if engine == None:
+      raise AuthenticationRequired
     connection = engine.connect()
 
     result = connection.execution_options(stream_results=True).execute(snippet['statement'])
